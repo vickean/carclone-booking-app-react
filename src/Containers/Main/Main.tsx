@@ -6,10 +6,14 @@ import {
    TextField,
    Button,
    MenuItem,
+   Snackbar,
+   IconButton,
 } from "@material-ui/core";
 import { useStyles } from "./styles";
 import { FormFieldProps } from "../../Models/Form";
 import { Action } from "../../Models/Action";
+import { format } from "date-fns";
+import CloseIcon from "@material-ui/icons/Close";
 
 interface CarModelList {
    id: string;
@@ -25,8 +29,25 @@ interface CarBrandList {
    popular: [CarListItem];
 }
 
-interface LocationList {
-   locations: [string];
+interface LocationItem {
+   name: string;
+}
+
+interface SlotItem {
+   slotNo: number;
+   available: boolean;
+}
+
+interface SlotGrpItem {
+   time: string;
+   slots: [SlotItem];
+}
+
+interface dayItem {
+   date: string;
+   day: number;
+   slotsPerGroup: number;
+   slotGrpArr: [SlotGrpItem];
 }
 
 interface FormState {
@@ -39,7 +60,10 @@ interface FormState {
    date: FormFieldProps;
    time: FormFieldProps;
    cars: CarBrandList;
-   locations: LocationList;
+   locations: [LocationItem];
+   slotsAvai: [dayItem];
+   slotNum: number;
+   open: boolean;
 }
 
 export const Main = (props: any) => {
@@ -112,7 +136,17 @@ export const Main = (props: any) => {
             },
          ],
       },
-      locations: { locations: [""] },
+      locations: [{ name: "" }],
+      slotsAvai: [
+         {
+            date: "",
+            day: 0,
+            slotsPerGroup: 0,
+            slotGrpArr: [{ time: "", slots: [{ slotNo: 0, available: false }] }],
+         },
+      ],
+      slotNum: 0,
+      open: false,
    };
 
    const reducer: Reducer<FormState, Action> = (prevState, action) => {
@@ -139,7 +173,190 @@ export const Main = (props: any) => {
       fetchData(`${API}/cars`).then((data) =>
          dispatch({ type: "cars", payload: data })
       );
+      fetchData(`${API}/locations`).then((data) =>
+         dispatch({ type: "locations", payload: data })
+      );
    }, []);
+
+   /**
+    * Runs on state.location.value change
+    */
+   useEffect(() => {
+      if (state.location.value !== "") {
+         fetchData(`${API}/available-slots/${state.location.value}`).then((data) =>
+            dispatch({ type: "slotsAvai", payload: data })
+         );
+      }
+   }, [state.location.value]);
+
+   useEffect(() => {
+      if (state.time.value !== "") {
+         const nextAvaiSlotNum = state.time.value.slots.filter(
+            (el: SlotItem) => el.available === true
+         )[0].slotNo;
+
+         dispatch({
+            type: "slotNum",
+            payload: nextAvaiSlotNum,
+         });
+      }
+   }, [state.time.value]);
+
+   const handleSubmit = async () => {
+      let err = false;
+
+      if (state.name.value === "") {
+         err = true;
+         dispatch({
+            type: "name",
+            payload: {
+               value: state.name.value,
+               error: true,
+               helperText: "Name is required",
+            },
+         });
+      }
+
+      if (state.email.value === "") {
+         err = true;
+         dispatch({
+            type: "email",
+            payload: {
+               value: state.email.value,
+               error: true,
+               helperText: "Email is required",
+            },
+         });
+      }
+
+      if (state.phoneNo.value === "") {
+         err = true;
+         dispatch({
+            type: "phoneNo",
+            payload: {
+               value: state.phoneNo.value,
+               error: true,
+               helperText: "Phone No. is required",
+            },
+         });
+      }
+
+      if (state.brand.value === "") {
+         err = true;
+         dispatch({
+            type: "brand",
+            payload: {
+               value: state.brand.value,
+               error: true,
+               helperText: "Brand is required",
+            },
+         });
+      }
+
+      if (state.model.value === "" && state.brand.value.name !== "Others") {
+         err = true;
+         dispatch({
+            type: "model",
+            payload: {
+               value: state.model.value,
+               error: true,
+               helperText: "Model is required",
+            },
+         });
+      }
+
+      if (state.location.value === "") {
+         err = true;
+         dispatch({
+            type: "location",
+            payload: {
+               value: state.location.value,
+               error: true,
+               helperText: "Location is required",
+            },
+         });
+      }
+
+      if (state.date.value === "") {
+         err = true;
+         dispatch({
+            type: "date",
+            payload: {
+               value: state.date.value,
+               error: true,
+               helperText: "Date is required",
+            },
+         });
+      }
+
+      if (state.time.value === "") {
+         err = true;
+         dispatch({
+            type: "time",
+            payload: {
+               value: state.time.value,
+               error: true,
+               helperText: "Time is required",
+            },
+         });
+      }
+
+      if (err) return;
+
+      const postForm = await fetch(`${API}/user`, {
+         method: "POST",
+         headers: {
+            Accept: "application/json",
+            "Content-Type": "application/json",
+         },
+         body: JSON.stringify({
+            name: state.name.value.trim(),
+            email: state.email.value.trim(),
+            phoneNum: state.phoneNo.value.trim(),
+            carBrand: state.brand.value.name,
+            carModel: state.model.value,
+         }),
+      });
+
+      const postData = await postForm.json();
+
+      // console.log(postData);
+
+      const bookingForm = await fetch(`${API}/timeslot`, {
+         method: "POST",
+         headers: {
+            Accept: "application/json",
+            "Content-Type": "application/json",
+         },
+         body: JSON.stringify({
+            userId: postData.id,
+            dateTime: state.time.value.time,
+            location: state.location.value,
+            slotNum: state.slotNum,
+         }),
+      });
+
+      const bookingData = await bookingForm.json();
+
+      // console.log(bookingData);
+
+      dispatch({
+         type: "open",
+         payload: true,
+      });
+   };
+
+   const handleClose = () => {
+      dispatch({
+         type: "open",
+         payload: false,
+      });
+
+      dispatch({
+         type: "reset",
+         payload: "",
+      });
+   };
 
    return (
       <Fragment>
@@ -153,9 +370,9 @@ export const Main = (props: any) => {
                </Grid>
             </Grid>
          </Card>
-         <Button variant="contained" onClick={() => console.table(state)}>
+         {/* <Button variant="contained" onClick={() => console.log(state)}>
             Log State
-         </Button>
+         </Button> */}
          <Card className={classes.card}>
             <Grid container>
                <Grid item xs={12}>
@@ -176,7 +393,7 @@ export const Main = (props: any) => {
                            dispatch({
                               type: "name",
                               payload: {
-                                 value: e.target.value.trim(),
+                                 value: e.target.value,
                                  error: false,
                                  helperText: "",
                               },
@@ -324,28 +541,144 @@ export const Main = (props: any) => {
                         variant="outlined"
                         fullWidth
                         className={classes.formField}
-                     />
+                        select
+                        value={state.location.value}
+                        error={state.location.error}
+                        helperText={state.location.helperText}
+                        onChange={(e) => {
+                           dispatch({
+                              type: "location",
+                              payload: {
+                                 value: e.target.value,
+                                 error: false,
+                                 helperText: "",
+                              },
+                           });
+                        }}
+                     >
+                        {state.locations.map((el: LocationItem) => {
+                           return (
+                              <MenuItem key={el.name} value={el.name}>
+                                 {el.name}
+                              </MenuItem>
+                           );
+                        })}
+                     </TextField>
                      <TextField
                         required
                         label="Date"
                         variant="outlined"
                         fullWidth
                         className={classes.formField}
-                     />
+                        disabled={state.location.value === ""}
+                        select
+                        value={state.date.value}
+                        error={state.date.error}
+                        helperText={state.date.helperText}
+                        onChange={(e) => {
+                           dispatch({
+                              type: "date",
+                              payload: {
+                                 value: e.target.value,
+                                 error: false,
+                                 helperText: "",
+                              },
+                           });
+                        }}
+                        SelectProps={{
+                           renderValue: (selected: any) => {
+                              return format(new Date(selected.date), "do MMM yyyy");
+                           },
+                        }}
+                     >
+                        {state.slotsAvai.map((el: dayItem) => {
+                           const isFullyBooked =
+                              el.slotGrpArr.filter((el2: SlotGrpItem) => {
+                                 const slotCount = el2.slots.filter(
+                                    (el3: SlotItem) => el3.available === false
+                                 );
+                                 return slotCount.length === el.slotsPerGroup;
+                              }).length === el.slotGrpArr.length;
+
+                           return (
+                              <MenuItem
+                                 key={el.date}
+                                 value={el as any}
+                                 disabled={isFullyBooked}
+                              >
+                                 {format(new Date(el.date || "0000"), "do MMM yyyy")}
+                              </MenuItem>
+                           );
+                        })}
+                     </TextField>
                      <TextField
                         required
                         label="Time"
                         variant="outlined"
                         fullWidth
                         className={classes.formField}
-                     />
+                        disabled={state.date.value === ""}
+                        select
+                        value={state.time.value}
+                        error={state.time.error}
+                        helperText={state.time.helperText}
+                        onChange={(e) => {
+                           dispatch({
+                              type: "time",
+                              payload: {
+                                 value: e.target.value,
+                                 error: false,
+                                 helperText: "",
+                              },
+                           });
+                        }}
+                     >
+                        {state.date.value.slotGrpArr?.map((el: SlotGrpItem) => {
+                           const isSlotFullyBooked =
+                              el.slots.filter(
+                                 (el2: SlotItem) => el2.available === false
+                              ).length === el.slots.length;
+
+                           return (
+                              <MenuItem
+                                 key={el.time}
+                                 value={el as any}
+                                 disabled={isSlotFullyBooked}
+                              >
+                                 {format(new Date(el.time || "0000"), "hh.mma")}
+                              </MenuItem>
+                           );
+                        })}
+                     </TextField>
                   </form>
                </Grid>
             </Grid>
          </Card>
          <Card className={classes.card} style={{ textAlign: "center" }}>
-            <Button variant="contained">Book an Inspection</Button>
+            <Button variant="contained" onClick={handleSubmit}>
+               Book an Inspection
+            </Button>
          </Card>
+         <Snackbar
+            anchorOrigin={{
+               vertical: "bottom",
+               horizontal: "center",
+            }}
+            open={state.open}
+            autoHideDuration={3000}
+            onClose={handleClose}
+            message="Inspection Booked"
+            action={
+               <IconButton
+                  size="small"
+                  aria-label="close"
+                  color="inherit"
+                  onClick={handleClose}
+               >
+                  <CloseIcon fontSize="small" />
+               </IconButton>
+            }
+         />
       </Fragment>
    );
 };
